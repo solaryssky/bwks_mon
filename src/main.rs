@@ -57,8 +57,14 @@ fn main() {
 
 }
 
+    if scores.is_empty(){
+        println!("longduration,stream=bwks,id=0 count=0 {}", timestamp_nanos);
+        return;
+
+  }
+
     for (string, num) in &scores {
-            println!("longduration,stream=bwks id={} count={}i {}", string, num, timestamp_nanos);
+            println!("longduration,stream=bwks,id={} count={}i {}", string, num, timestamp_nanos);
       }
 
 
