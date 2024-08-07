@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::SystemTime;
 extern crate chrono;
-use chrono::{Duration, Utc};
+use chrono::{Duration, Local, Datelike, Weekday};
 use now::DateTimeNow;
 use ssh2::Session;
 use flate2::read::GzDecoder;
@@ -20,7 +20,7 @@ const CAPACITY: usize = 10240;
 
 fn main() {
 
-    let _guard = sentry::init(("https://00bd13f6650348a9a9c9f4e2c5c9eddb@sentry.obs.mts.ru/795", sentry::ClientOptions {
+    let _guard = sentry::init(("https://sentry.ru/795", sentry::ClientOptions {
         release: sentry::release_name!(),
         ..Default::default()
     }));
@@ -31,30 +31,46 @@ fn main() {
     let second: u64 = 604800;
     let search_str = String::from("Long Duration");
     let dirs = String::from("/mnt/ARCH1/BACKUP/BWKS/");
-    let mut scores:HashMap<String, i32> = HashMap::new();
-    let now = Utc::now();
+    let file = "/tmp/bwks.csv";
+    let file_upload = "/www/bwks_mon/bwks.csv";
+    let host_port_upl = "127.0.0.1:22";
+    let mut scores_cdr:HashMap<String, i32> = HashMap::new();
+    let now = Local::now();
     let duration_since_epoch = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
     let timestamp_nanos = duration_since_epoch.as_nanos(); // u128
     let week_start = now.beginning_of_week();  
+    
+    let current_day = Local::now();
+    let current_day_num:i64 = current_day.weekday().number_from_monday().into();
+    let week_day = current_day.weekday();
+    let fri = Weekday::Fri;
+
+if week_day != fri {
+    println!("longduration,stream=bwks,id=0i count=0i {}", timestamp_nanos);
+    return;
+}
+
     let mut date_vector: Vec<String> = Vec::new();
-    let mut upl_vector: Vec<String> = Vec::new();
 
     let user = env::var("A_USER").unwrap();
     let pass = env::var("A_PASS").unwrap();
-    
-    let file = "/tmp/bwks.txt";
+
+    //let user = "";
+    //let pass = "";
+
 
 if Path::new(file).exists() {
         fs::remove_file(file).unwrap();
       }
     let _ = File::create(file);
     
-for n in 0..7 {
+for n in 0..current_day_num {
     let wsplus = week_start + Duration::days(n);
     let wsplus =  wsplus.format("%Y%m%d");
     let wsplus =  wsplus.to_string();
         date_vector.push(wsplus); 
     }
+    
   
     
     for element in date_vector { 
@@ -88,31 +104,30 @@ for n in 0..7 {
                 if count == 1 || count == 7 || count == 9 || count == 10{
 
                 if count == 1{
-                       concat_string = fname.to_string() + " " + part;                  
+                       concat_string = fname.to_string() + ";" + part;                  
                 }
                 else{
-                       concat_string = concat_string.to_owned() + " " + part;
+                       concat_string = concat_string.to_owned() + ";" + part;
                 }
                 
                 
                 }
+                
+            if count == 10 {
+
+                scores_cdr.entry(concat_string.clone()).and_modify(|count| *count += 1).or_insert(1);
+            }
                 
                 count += 1;
-                upl_vector.push(concat_string.clone());
-               
-
         }
-
-
-            let Some((a, _))  = line.split_once(',') else { todo!() };
-            let record_id = a.to_string();
-
-                scores.entry(record_id).and_modify(|count| *count += 1).or_insert(1);
     
             }
 
+            
+
                
     }
+
         }
        
     }
@@ -121,31 +136,31 @@ for n in 0..7 {
     }
 
 
-
-
-    if scores.is_empty(){
-        println!("longduration,stream=bwks,id=0 count=0 {}", timestamp_nanos);
+    if scores_cdr.is_empty(){
+        println!("longduration,stream=bwks,id=0i count=0i {}", timestamp_nanos);
         return;
 
   }
+  else{
+        println!("longduration,stream=bwks,id=0i count=1i {}", timestamp_nanos);
+  }
 
-    for (string, num) in &scores {
-            let line = "longduration,stream=bwks,id=".to_owned() + string + " count=" + &num.to_string() + "i " + &timestamp_nanos.to_string();
+  for (string, num) in &scores_cdr {
             
             let mut file = OpenOptions::new()
             .write(true)
             .append(true)
-            .open("/tmp/bwks.txt")
+            .open(file)
             .unwrap();
     
-        if let Err(e) = writeln!(file, "{}", &line) {
+        if let Err(e) = writeln!(file, "{}", string.to_owned() + ";" + &num.to_string()) {
             eprintln!("Couldn't write to file: {}", e);
         }
       }
  
       //upload to sftp
 
-      let tcp = TcpStream::connect("127.0.0.1:22").unwrap();
+      let tcp = TcpStream::connect(host_port_upl).unwrap();
       let mut sess = Session::new().unwrap();
               sess.set_tcp_stream(tcp);
               sess.handshake().unwrap();
@@ -154,7 +169,7 @@ for n in 0..7 {
       let mut local_file = File::open(file).expect("no file found");
       let mut buffer:Vec<u8> = Vec::new();
       let _ :u64 = local_file.read_to_end(&mut buffer).unwrap().try_into().unwrap();
-            sftp.create(&Path::new("/tmp/file.txt"))
+            sftp.create(&Path::new(file_upload))
           .unwrap()
           .write_all(&buffer)
           .unwrap();
