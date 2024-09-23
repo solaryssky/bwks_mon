@@ -161,8 +161,11 @@ for n in 0..current_day_num {
       //upload to sftp
 
       let tcp = TcpStream::connect(host_port_upl).unwrap();
-      let mut sess = Session::new().unwrap();
+       let mut sess = Session::new().unwrap();
               sess.set_tcp_stream(tcp);
+              sess.set_compress(true);
+              sess.timeout();
+              sess.set_timeout(3000);
               sess.handshake().unwrap();
               sess.userauth_password(&user, &pass).unwrap();
       let sftp = sess.sftp().unwrap();
